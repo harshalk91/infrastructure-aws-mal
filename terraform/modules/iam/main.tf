@@ -1,6 +1,7 @@
 locals {
   common_tags = {
     project = var.name
+    environment = var.environment
   }
 }
 
@@ -18,7 +19,7 @@ data "aws_iam_policy_document" "ecs_task_assume_role" {
 
 #pull image and write logs
 resource "aws_iam_role" "task_execution" {
-  name               = "${var.name}-task-exec-role"
+  name               = "${var.name}-${var.environment}-task-exec-role"
   assume_role_policy = data.aws_iam_policy_document.ecs_task_assume_role.json
   tags               = local.common_tags
 }
@@ -30,7 +31,7 @@ resource "aws_iam_role_policy_attachment" "task_exec_managed" {
 
 # least privilege principal, starting with less permission, more permissions can be added if needed
 resource "aws_iam_role" "task" {
-  name               = "${var.name}-task-role"
+  name               = "${var.name}-${var.environment}-task-role"
   assume_role_policy = data.aws_iam_policy_document.ecs_task_assume_role.json
   tags               = local.common_tags
 }

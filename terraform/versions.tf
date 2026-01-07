@@ -7,6 +7,11 @@ terraform {
       version = ">= 5.0"
     }
   }
+#  backend "s3" {
+#    bucket = "terraform-remote-states"
+#    key = "path/to/key"
+#    region = "me-central-1"
+#  }
 }
 
 

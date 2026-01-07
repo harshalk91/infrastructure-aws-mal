@@ -1,5 +1,12 @@
+locals {
+  common_tags = {
+    project = var.name
+    environment = var.environment
+  }
+}
+
 resource "aws_security_group" "alb" {
-  name   = "${var.name}-alb-sg"
+  name   = "${var.name}-${var.environment}-alb-sg"
   vpc_id = var.vpc_id
 
   ingress {
@@ -18,7 +25,7 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_security_group" "ecs" {
-  name   = "${var.name}-ecs-sg"
+  name   = "${var.name}-${var.environment}-ecs-sg"
   vpc_id = var.vpc_id
 
   ingress {

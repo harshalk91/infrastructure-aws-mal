@@ -20,3 +20,6 @@ variable "alb_sg_id" {
   type = string
 }
 
+variable "environment" {
+  type = string
+}

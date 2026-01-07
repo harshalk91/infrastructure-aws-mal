@@ -12,3 +12,7 @@ variable "container_port" {
   type    = number
   default = 8080
 }
+
+variable "environment" {
+  type = string
+}

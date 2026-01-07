@@ -1,9 +1,18 @@
+locals {
+  common_tags = {
+    project = var.name
+    environment = var.environment
+  }
+}
+
 resource "aws_ecs_cluster" "this" {
   name = var.cluster_name
+
+  tags = local.common_tags
 }
 
 resource "aws_ecs_task_definition" "this" {
-  family                   = "${var.name}-task"
+  family                   = "${var.name}-${var.environment}-task"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = var.cpu
@@ -15,8 +24,7 @@ resource "aws_ecs_task_definition" "this" {
   container_definitions = jsonencode([
     {
       name  = "java-app"
-      image = "${var.ecr_repository_url}:latest"
-
+      image = "${var.ecr_repository_url}@${var.environment}"
       portMappings = [{
         containerPort = var.container_port
         protocol      = "tcp"
@@ -32,10 +40,11 @@ resource "aws_ecs_task_definition" "this" {
       }
     }
   ])
+  tags = local.common_tags
 }
 
 resource "aws_ecs_service" "this" {
-  name            = "${var.name}-service"
+  name            = "${var.name}-${var.environment}-service"
   cluster         = aws_ecs_cluster.this.id
   task_definition = aws_ecs_task_definition.this.arn
   desired_count   = var.desired_count
@@ -51,6 +60,8 @@ resource "aws_ecs_service" "this" {
     container_name   = "java-app"
     container_port   = var.container_port
   }
+
+  tags = local.common_tags
 }
 
 
@@ -60,10 +71,11 @@ resource "aws_appautoscaling_target" "ecs" {
     resource_id        = "service/${aws_ecs_cluster.this.name}/${aws_ecs_service.this.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
+  tags = local.common_tags
 }
 
 resource "aws_appautoscaling_policy" "cpu_target" {
-  name               = "${var.name}-cpu-70"
+  name               = "${var.name}-${var.environment}-cpu-70"
   policy_type        = "TargetTrackingScaling"
   resource_id        = aws_appautoscaling_target.ecs.resource_id
   scalable_dimension = aws_appautoscaling_target.ecs.scalable_dimension

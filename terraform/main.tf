@@ -4,6 +4,7 @@ module "vpc" {
   vpc_cidr = var.vpc_cidr
   public_subnet_cidrs = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
+  environment = var.environment
 }
 
 module "security_group" {
@@ -11,6 +12,7 @@ module "security_group" {
   name = var.name
   vpc_id = module.vpc.vpc_id
   container_port = var.container_port
+  environment = var.environment
 }
 
 module "alb" {
@@ -20,6 +22,7 @@ module "alb" {
   vpc_id         = module.vpc.vpc_id
   public_subnets = var.private_subnet_cidrs
   container_port = var.container_port
+  environment = var.environment
 }
 
 module "ecr" {
@@ -30,11 +33,13 @@ module "ecr" {
 module "logs" {
   source = "./modules/cloudwatch"
   name = var.name
+  environment = var.environment
 }
 
 module "iam" {
   source = "./modules/iam"
   name = var.name
+  environment = var.environment
 }
 
 module "ecs" {
@@ -51,5 +56,6 @@ module "ecs" {
   target_group_arn = module.alb.target_group_arn
   ecs_sg_id = module.security_group.ecs_security_group_id
   aws_region = var.aws_region
+  environment = var.environment
 }
 

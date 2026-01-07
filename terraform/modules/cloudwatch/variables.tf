@@ -6,3 +6,7 @@ variable "name" {
   type    = string
   default = "java-ecs"
 }
+
+variable "environment" {
+  type = string
+}

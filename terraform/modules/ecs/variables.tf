@@ -58,3 +58,7 @@ variable "target_group_arn" {
 variable "aws_region" {
   type = string
 }
+
+variable "environment" {
+  type = string
+}
