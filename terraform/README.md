@@ -34,29 +34,32 @@ The design intentionally mirrors how mature platform / DevOps teams run ECS work
 ## 📁 Repository Structure
 
 ```text
-terraform-aws-ecs-fargate-alb/
-├── modules/
-│   ├── vpc/
-│   ├── security-groups/
-│   ├── alb/
-│   ├── ecr/
-│   ├── iam/
-│   ├── cloudtwatch/
-│   └── ecs/
-│       ├── main.tf
-│       ├── autoscaling.tf
-│       ├── variables.tf
-│       └── outputs.tf
-│
-├── environments/
-│   ├── dev.tfvars
-│   └── prod.tfvars
-│
-├── main.tf
-├── variables.tf
-├── versions.tf
-├── outputs.tf
-└── README.md
+infrastructure-aws-mal/
+├── .github/                  # GitHub Actions CI/CD workflows
+├── app/                      # Application artifacts (Dockerfile, app code, etc.)
+├── terraform/
+│   ├── .terraform/           # Terraform working directory
+│   ├── environments/         # Environment-specific variables
+│   │   ├── dev.tfvars
+│   │   └── prod.tfvars
+│   ├── modules/              # Reusable Terraform modules
+│   │   ├── vpc/
+│   │   ├── security-groups/
+│   │   ├── alb/
+│   │   ├── ecr/
+│   │   ├── iam/
+│   │   ├── cloudwatch/
+│   │   └── ecs/
+│   │       ├── main.tf
+│   │       ├── autoscaling.tf
+│   │       ├── variables.tf
+│   │       └── outputs.tf
+│   ├── main.tf               # Root Terraform orchestration
+│   ├── variables.tf
+│   ├── versions.tf
+│   ├── outputs.tf
+│   └── README.md             # Terraform-specific documentation
+├── README.md                 # Repository entry documentation (this file)
 ```
 
 ## 🌍 Environment Model
