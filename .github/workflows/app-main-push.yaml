@@ -1,3 +1,6 @@
+# .github/workflows/deploy.yml
+name: CI/CD - Build, Push to ECR, Deploy to ECS
+
 on:
   push:
     branches: [ "main" ]
@@ -9,3 +12,183 @@ on:
     paths:
       - "app/**"
 
+
+
+
+permissions:
+  contents: read
+  id-token: write   # required for OIDC (recommended)
+  actions: read
+
+concurrency:
+  group: ecs-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }} # e.g. my-app
+  ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}       # e.g. my-dev-cluster
+  ECS_SERVICE: ${{ secrets.ECS_SERVICE }}       # e.g. my-app-dev
+  CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }} # must match task def container name
+  TASK_DEFINITION_PATH: ${{ secrets.TASK_DEFINITION_PATH }} # e.g. ecs/taskdef-dev.json
+
+jobs:
+  pr-tests:
+    name: PR - Build & Test
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Build + Unit Tests
+        run: mvn -B test package
+
+  build-push-deploy-dev:
+    name: Main - Build, Push, Deploy (dev)
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+
+    outputs:
+      image_uri: ${{ steps.meta.outputs.image_uri }}
+      image_tag_sha: ${{ steps.meta.outputs.image_tag_sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Build + Unit Tests
+        run: mvn -B test package
+
+      # ---- AWS Auth (OIDC recommended) ----
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Compute image tags
+        id: meta
+        run: |
+          set -euo pipefail
+          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          SHA_TAG="${GITHUB_SHA}"
+          IMAGE_URI="${REGISTRY}/${{ env.ECR_REPOSITORY }}"
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+          echo "image_tag_sha=${SHA_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        run: |
+          set -euo pipefail
+          docker build -t "${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag_sha }}" \
+                       -t "${{ steps.meta.outputs.image_uri }}:latest" \
+                       .
+
+      - name: Push Docker image to ECR
+        run: |
+          set -euo pipefail
+          docker push "${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag_sha }}"
+          docker push "${{ steps.meta.outputs.image_uri }}:latest"
+
+      # ---- Deploy to ECS ----
+      - name: Render new task definition with updated image
+        id: render-taskdef
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.TASK_DEFINITION_PATH }}
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag_sha }}
+
+      - name: Deploy ECS task definition
+        id: deploy-ecs
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-taskdef.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      - name: Verify deployment succeeded (task running new image)
+        run: |
+          set -euo pipefail
+          aws ecs describe-services \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "${{ env.ECS_SERVICE }}" \
+            --query "services[0].deployments[?status=='PRIMARY'].[rolloutState,rolloutStateReason]" \
+            --output text
+
+  # Production job: manual approval via Environment protection rules
+  deploy-prod:
+    name: Manual Approval - Deploy to prod
+    # This job is optional unless you want prod deployment in same workflow.
+    # It is set to manual via environment approvals (Settings -> Environments -> prod).
+    needs: [ build-push-deploy-dev ]
+    runs-on: ubuntu-latest
+    environment: prod
+    # only run when workflow is triggered manually OR you add another trigger
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+
+    env:
+      ECS_CLUSTER: ${{ secrets.ECS_CLUSTER_PROD }}
+      ECS_SERVICE: ${{ secrets.ECS_SERVICE_PROD }}
+      TASK_DEFINITION_PATH: ${{ secrets.TASK_DEFINITION_PATH_PROD }}
+      CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME_PROD }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Render task definition (prod)
+        id: render-taskdef
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.TASK_DEFINITION_PATH }}
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ needs.build-push-deploy-dev.outputs.image_uri }}:${{ needs.build-push-deploy-dev.outputs.image_tag_sha }}
+
+      - name: Deploy ECS task definition (prod)
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-taskdef.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+  notify-failure:
+    name: Notify on failure
+    runs-on: ubuntu-latest
+    needs: [ pr-tests, build-push-deploy-dev, deploy-prod ]
+    if: ${{ always() && (needs.pr-tests.result == 'failure' || needs.build-push-deploy-dev.result == 'failure' || needs.deploy-prod.result == 'failure') }}
+    steps:
+      - name: Slack notification (optional)
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        run: |
+          set -euo pipefail
+          payload=$(cat <<EOF
+          {
+            "text": "❌ CI/CD failed for *${{ github.repository }}* on *${{ github.ref_name }}*.\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+          )
+          curl -X POST -H 'Content-type: application/json' --data "$payload" "${{ secrets.SLACK_WEBHOOK_URL }}"
