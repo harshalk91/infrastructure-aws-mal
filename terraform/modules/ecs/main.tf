@@ -3,7 +3,62 @@ locals {
     project = var.name
     environment = var.environment
   }
+  app_container = {
+      name      = "java-app"
+      image     = "${var.ecr_repository_url}@${var.environment}"
+      essential = true
+
+      portMappings = [{
+        containerPort = var.container_port
+        protocol      = "tcp"
+      }]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = var.log_group_name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "app"
+        }
+      }
+    }
+
+    newrelic_container = {
+      name      = "newrelic-infra"
+      image     = var.newrelic_sidecar_image
+      essential = true
+
+      environment = [
+        { name = "FARGATE", value = "true" },
+        { name = "NRIA_IS_FORWARD_ONLY", value = "true" },
+        { name = "NRIA_PASSTHROUGH_ENVIRONMENT", value = "ECS_CONTAINER_METADATA_URI_V4" },
+        {
+          name  = "NRIA_CUSTOM_ATTRIBUTES",
+          value = jsonencode({
+            service     = var.name
+            environment = var.environment
+          })
+        }
+      ]
+
+      secrets = [
+        {
+          name      = "NRIA_LICENSE_KEY"
+          valueFrom = var.newrelic_license_key_secret_arn
+        }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = var.log_group_name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "newrelic"
+        }
+      }
+    }
 }
+
 
 resource "aws_ecs_cluster" "this" {
   name = var.cluster_name
@@ -21,25 +76,12 @@ resource "aws_ecs_task_definition" "this" {
   execution_role_arn = var.execution_role_arn
   task_role_arn      = var.task_role_arn
 
-  container_definitions = jsonencode([
-    {
-      name  = "java-app"
-      image = "${var.ecr_repository_url}@${var.environment}"
-      portMappings = [{
-        containerPort = var.container_port
-        protocol      = "tcp"
-      }]
+  container_definitions = jsonencode(
+    var.enable_newrelic_sidecar
+    ? [local.app_container, local.newrelic_container]
+    : [local.app_container]
+  )
 
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = var.log_group_name
-          awslogs-region        = var.aws_region
-          awslogs-stream-prefix = "ecs"
-        }
-      }
-    }
-  ])
   tags = local.common_tags
 }
 

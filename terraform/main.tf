@@ -57,5 +57,6 @@ module "ecs" {
   ecs_sg_id = module.security_group.ecs_security_group_id
   aws_region = var.aws_region
   environment = var.environment
+  newrelic_license_key_secret_arn = var.newrelic_license_key_secret_arn
 }
 

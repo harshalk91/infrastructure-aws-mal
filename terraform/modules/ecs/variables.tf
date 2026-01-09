@@ -62,3 +62,18 @@ variable "aws_region" {
 variable "environment" {
   type = string
 }
+
+variable "enable_newrelic_sidecar" {
+  type    = bool
+  default = true
+}
+
+variable "newrelic_license_key_secret_arn" {
+  type        = string
+  description = "Secrets Manager ARN containing New Relic license key"
+}
+
+variable "newrelic_sidecar_image" {
+  type    = string
+  default = "newrelic/nri-ecs:1.11.10"
+}

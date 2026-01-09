@@ -59,3 +59,8 @@ variable "environment" {
   type = string
   default = "dev"
 }
+
+variable "newrelic_license_key_secret_arn" {
+  type        = string
+  description = "ARN of New Relic license key secret"
+}
